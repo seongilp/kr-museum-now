@@ -1,0 +1,6 @@
+{
+  "regions": ["icn1"],
+  "crons": [
+    { "path": "/api/warm", "schedule": "0 15 * * *" }
+  ]
+}
