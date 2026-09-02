@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 
-import { getCatalogCached } from '@/lib/museum-cache';
+import { getCatalogCached, rotationPending, runIntroRotation } from '@/lib/museum-cache';
 import { nearest, SEOUL, type LatLon } from '@/lib/geo';
 import { swrCacheControl } from '@/lib/cache-control';
 import { kstToday } from '@/lib/kst';
@@ -26,7 +26,8 @@ import type { MuseumWithDistance, MuseumsResponse, QueryMode } from '@/lib/types
  *  - **location·bounds 는 no-store**. 좌표/영역이 사용자마다 달라 CDN 이 안 먹는다.
  */
 
-// self-fetch 캐시 미스 시 폴백 경로가 ~50s paced 배치를 돌 수 있으므로 여유를 준다.
+// 목록 응답 자체는 <1s(공유 캐시). 다만 응답을 내보낸 뒤 after() 로 도는 상세 회전 백그라운드
+// 킥(≤55s, 그날 커버 완료 전까지만)이 함수 수명 안에서 진행하도록 여유를 둔다.
 export const maxDuration = 60;
 
 const LIMIT = 300; // 클라이언트로 내리는 최대 건수(전량이 ~629라 넉넉).
@@ -154,6 +155,15 @@ export async function GET(req: Request) {
         excludedByOpenToday,
       },
     };
+
+    // ★ 응답을 내보낸 뒤(after) 상세 회전을 백그라운드로 이어 돌려 이 인스턴스의 introStore 를
+    //   self-heal 한다. 목록 응답은 이미 위에서 완성됐으니 회전은 절대 응답을 지연시키지 않는다.
+    //   그날 커버 완료·쿼터·예산 소진 시 rotationPending() 이 false 가 돼 더는 킥하지 않는다.
+    if (rotationPending()) {
+      after(async () => {
+        await runIntroRotation().catch(() => {});
+      });
+    }
 
     return NextResponse.json(body, {
       headers: {

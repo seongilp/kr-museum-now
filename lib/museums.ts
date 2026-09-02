@@ -196,6 +196,41 @@ export function normalizeMuseum(list: MuseumListRaw, intro: MuseumIntroRaw | nul
 }
 
 /**
+ * 목록 정규화 Museum 에 상세 원문(intro)을 **병합한 새 객체**(불변). intro=null 이면 그대로 반환.
+ * 목록/상세 결합 해제의 마지막 단계 — 목록은 항상 먼저(intro 없이) 정규화해 두고, 상세가 나중에
+ * (회전 수집으로) 도착하면 여기서 준정적 필드(휴관일·관람시간·요금·주차)만 채운다.
+ */
+export function applyIntro(m: Museum, intro: MuseumIntroRaw | null): Museum {
+  if (!intro) return m;
+  return {
+    ...m,
+    restRaw: sanitizeText(intro.restdateculture),
+    hours: sanitizeText(intro.usetimeculture),
+    fee: sanitizeText(intro.usefee),
+    parking: sanitizeText(intro.parkingculture),
+  };
+}
+
+/**
+ * 목록 카탈로그 + 상세 조회함수 → 상세 병합 결과 + 병합률(introCoverage). **순수 함수**(테스트 대상).
+ * lookup(id) 규약: `undefined`=미수집(병합률에서 제외) / `null`=수집됨(휴관일 원문 없음, 병합률 포함) /
+ * 객체=수집됨. 즉 "수집 시도해 결과가 있음"과 "아직 안 받음"을 구분해 결측을 값인 척하지 않는다.
+ */
+export function mergeIntros(
+  museums: Museum[],
+  lookup: (id: string) => MuseumIntroRaw | null | undefined,
+): { museums: Museum[]; introCoverage: number } {
+  let covered = 0;
+  const merged = museums.map((m) => {
+    const intro = lookup(m.id);
+    if (intro === undefined) return m; // 미수집 — 목록 필드만(restRaw=null → openToday=unknown)
+    covered += 1;
+    return applyIntro(m, intro);
+  });
+  return { museums: merged, introCoverage: museums.length ? covered / museums.length : 0 };
+}
+
+/**
  * 응답 본문에서 items 배열을 안전하게 뽑는다.
  * 정상: response.body.items.item (배열/단일객체, 0건이면 items===""/없음).
  */
