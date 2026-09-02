@@ -45,6 +45,24 @@ export interface Exhibition {
   lon: number | null;
 }
 
+/**
+ * HTML 엔티티 디코드. 공연전시 API 제목/장소는 `&amp;middot;`(이중 인코딩)·`&lt;`·`&gt;` 등이
+ * 섞여 온다(실측: "음향&amp;middot;영상", "&amp;lt;다른 이름&amp;gt;"). 그대로 두면 화면에 리터럴로
+ * 보인다. `&amp;` 를 먼저 풀어 이중 인코딩을 한 번에 처리한 뒤 명명 엔티티를 치환한다.
+ */
+export function decodeEntities(v: string | undefined): string {
+  if (!v) return '';
+  let s = v.replace(/&amp;/g, '&');
+  const map: Record<string, string> = {
+    '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&apos;': "'",
+    '&middot;': '·', '&nbsp;': ' ',
+  };
+  s = s.replace(/&lt;|&gt;|&quot;|&#39;|&apos;|&middot;|&nbsp;/g, (m) => map[m] ?? m);
+  // 남은 숫자 엔티티(&#NNNN;) 처리.
+  s = s.replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Number(n)));
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 const numOrNull = (v: string | undefined): number | null => {
   if (v == null || v === '') return null;
   const n = Number(v);
@@ -64,7 +82,7 @@ const REALM_EXHIBITION = '전시';
 export function normalizeExhibition(raw: ExhibitionRaw): Exhibition | null {
   if ((raw.realmName || '').trim() !== REALM_EXHIBITION) return null;
   const id = raw.seq?.trim();
-  const title = raw.title?.trim();
+  const title = decodeEntities(raw.title);
   const startYmd = raw.startDate?.trim() || '';
   const endYmd = raw.endDate?.trim() || '';
   const startDay = ymdToDay(startYmd);
@@ -81,9 +99,9 @@ export function normalizeExhibition(raw: ExhibitionRaw): Exhibition | null {
   return {
     id,
     title,
-    place: raw.place?.trim() || null,
-    area: raw.area?.trim() || null,
-    sigungu: raw.sigungu?.trim() || null,
+    place: decodeEntities(raw.place) || null,
+    area: decodeEntities(raw.area) || null,
+    sigungu: decodeEntities(raw.sigungu) || null,
     startYmd,
     endYmd,
     startDay,

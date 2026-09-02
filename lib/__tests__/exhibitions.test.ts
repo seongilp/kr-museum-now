@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  decodeEntities,
   isActiveOn,
   normalizeExhibition,
   overlaps,
@@ -50,6 +51,22 @@ describe('normalizeExhibition — 전시만, 좌표 검증', () => {
     assert.equal(noc.lon, null);
     const abroad = normalizeExhibition({ ...base, gpsX: '2.35', gpsY: '48.86' })!;
     assert.equal(abroad.lat, null);
+  });
+});
+
+describe('decodeEntities — 이중 인코딩된 엔티티(실측)', () => {
+  it('&amp;middot; → ·, &amp;lt;/&amp;gt; → <>', () => {
+    assert.equal(decodeEntities('음향&amp;middot;영상&amp;middot;조명'), '음향·영상·조명');
+    assert.equal(decodeEntities('&amp;lt;다른 이름으로 저장&amp;gt;'), '<다른 이름으로 저장>');
+    assert.equal(decodeEntities('보통 제목'), '보통 제목');
+    assert.equal(decodeEntities(undefined), '');
+  });
+});
+
+describe('normalizeExhibition — 제목 엔티티 디코드', () => {
+  it('제목의 &amp;middot; 를 화면용으로 푼다', () => {
+    const e = normalizeExhibition({ ...base, title: 'A&amp;middot;B' })!;
+    assert.equal(e.title, 'A·B');
   });
 });
 
