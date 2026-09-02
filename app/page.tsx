@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Clock, Landmark, MapPin, Navigation, Palette, Search } from 'lucide-react';
+import { Clock, Image as ImageIcon, Landmark, MapPin, Navigation, Palette, Search } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
 
@@ -51,6 +51,10 @@ export default function Landing() {
           <Feature icon={<Palette className="size-5 text-primary" />}>
             종류 필터: 박물관 · 미술관 · 전시관 · 기념관 · 과학관.
           </Feature>
+          <Feature icon={<ImageIcon className="size-5 text-purple-400" />}>
+            <b className="text-foreground">지금 하는 전시</b> — 오늘·이번 주말·이번 달 열리는 전시를 지도에
+            함께. 문화정보 공연전시 데이터.
+          </Feature>
           <Feature icon={<Search className="size-5 text-primary" />}>
             ⌘K 로 이름 검색과 필터를 한곳에서. 지도를 옮기면 그 지역이 나옵니다.
           </Feature>
@@ -59,8 +63,8 @@ export default function Landing() {
         {/* 한계를 첫 화면부터 정직하게 */}
         <p className="mt-8 rounded-lg border border-border bg-card/50 p-3 text-xs leading-relaxed text-muted-foreground">
           휴관일은 각 기관이 등록한 원문을 해석합니다. <b>공휴일 휴관은 자동 반영되지 않습니다</b>
-          (공휴일 판정 미지원). 방문 전 원문과 각 기관 공지를 함께 확인하세요. 실시간 전시 일정은
-          제공 범위에 따라 순차 반영됩니다.
+          (공휴일 판정 미지원). 방문 전 원문과 각 기관 공지를 함께 확인하세요. 전시 일정은 문화정보
+          공연전시 데이터 기준이며, 좌표가 없는 일부 전시는 목록으로만 보여줍니다.
         </p>
       </div>
 

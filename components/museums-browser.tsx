@@ -2,12 +2,21 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Clock, Landmark, Loader2, MapPin, Search } from 'lucide-react';
+import { AlertCircle, Clock, Image as ImageIcon, Landmark, Loader2, MapPin, Search } from 'lucide-react';
 
 import type { LatLon } from '@/lib/geo';
 import { SEOUL, haversineKm } from '@/lib/geo';
-import type { MuseumIndexItem, MuseumWithDistance, MuseumsResponse, MapBounds } from '@/lib/types';
+import type {
+  ExhibitionWithDistance,
+  ExhibitionsResponse,
+  MapBounds,
+  MuseumIndexItem,
+  MuseumWithDistance,
+  MuseumsResponse,
+} from '@/lib/types';
+import type { Timeframe } from '@/lib/exhibitions';
 import type { MuseumKind } from '@/lib/museums';
+import { ExhibitionDetail } from '@/components/exhibition-detail';
 import {
   EMPTY_FILTERS,
   KIND_OPTIONS,
@@ -56,6 +65,13 @@ export function MuseumsBrowser() {
   const [extra, setExtra] = useState<MuseumWithDistance | null>(null);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
+  // 축 2 — 지금 하는 전시(오버레이). 기본 꺼짐.
+  const [showEx, setShowEx] = useState(false);
+  const [exTf, setExTf] = useState<Timeframe>('today');
+  const [exData, setExData] = useState<ExhibitionsResponse | null>(null);
+  const [exLoading, setExLoading] = useState(false);
+  const [exError, setExError] = useState(false);
+  const [selectedExId, setSelectedExId] = useState<string | null>(null);
   const flyKeyRef = useRef(0);
   const paletteOpenRef = useRef(paletteOpen);
   useEffect(() => void (paletteOpenRef.current = paletteOpen), [paletteOpen]);
@@ -165,18 +181,29 @@ export function MuseumsBrowser() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  /* ESC: 상세 닫기(팔레트가 위면 팔레트가 먼저 먹음, 입력창 포커스면 무시). */
+  /* ESC: 상세(박물관/전시) 닫기(팔레트가 위면 팔레트가 먼저 먹음, 입력창 포커스면 무시). */
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId && !selectedExId) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || paletteOpenRef.current) return;
       const t = e.target as HTMLElement | null;
       if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) return;
       setSelectedId(null);
+      setSelectedExId(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId]);
+  }, [selectedId, selectedExId]);
+
+  // 상세는 하나만: 박물관 선택 시 전시 상세 닫고, 전시 선택 시 박물관 상세 닫는다.
+  const selectMuseum = useCallback((id: string | null) => {
+    setSelectedExId(null);
+    setSelectedId(id);
+  }, []);
+  const selectExhibition = useCallback((id: string | null) => {
+    setSelectedId(null);
+    setSelectedExId(id);
+  }, []);
 
   /* 팔레트 최초 오픈 시 전국 이름 인덱스 1회 지연 로딩. */
   useEffect(() => {
@@ -193,6 +220,7 @@ export function MuseumsBrowser() {
   const selectFromPalette = useCallback(
     async (id: string) => {
       setPaletteOpen(false);
+      setSelectedExId(null); // 박물관 선택 → 전시 상세 닫기
       if (museums.some((m) => m.id === id)) {
         setExtra(null);
         setSelectedId(id);
@@ -222,6 +250,41 @@ export function MuseumsBrowser() {
     () => merged.map((m) => ({ id: m.id, lon: m.lon, lat: m.lat, title: m.title, state: m.openToday })),
     [merged],
   );
+
+  /* 전시 로드 — 토글 켜졌을 때만. 시간축(exTf)·실제 위치가 바뀌면 재요청. 박물관 축과 독립. */
+  useEffect(() => {
+    if (!showEx || geo.kind === 'locating') return;
+    let alive = true;
+    setExLoading(true);
+    setExError(false);
+    const params = new URLSearchParams({ tf: exTf });
+    if (hasRealLocation) {
+      params.set('lat', String(origin.lat));
+      params.set('lon', String(origin.lon));
+    }
+    fetch(`/api/exhibitions?${params.toString()}`)
+      .then((r) => (r.ok ? (r.json() as Promise<ExhibitionsResponse>) : Promise.reject()))
+      .then((j) => alive && setExData(j))
+      .catch(() => alive && setExError(true))
+      .finally(() => alive && setExLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [showEx, exTf, hasRealLocation, origin.lat, origin.lon, geo.kind]);
+
+  const exhibitionPoints = useMemo(
+    () =>
+      showEx && exData
+        ? exData.mapped.map((e) => ({ id: e.id, lon: e.lon as number, lat: e.lat as number, title: e.title }))
+        : [],
+    [showEx, exData],
+  );
+  // 목록에 보여줄 전시(좌표 보유 + 목록 전용 합쳐, 마감/거리 정렬은 서버가 함).
+  const exhibitionList: ExhibitionWithDistance[] = useMemo(
+    () => (showEx && exData ? [...exData.mapped, ...exData.listOnly] : []),
+    [showEx, exData],
+  );
+  const selectedEx = exhibitionList.find((e) => e.id === selectedExId) ?? null;
 
   const selected = merged.find((m) => m.id === selectedId) ?? null;
 
@@ -322,7 +385,30 @@ export function MuseumsBrowser() {
               <span className="text-[10px]">· 판정 불가</span>
             </span>
           )}
+          <span className="mx-0.5 w-px shrink-0 self-stretch bg-border" aria-hidden />
+          {/* 축 2 — 지금 하는 전시(오버레이 토글, 보라). */}
+          <Chip active={showEx} tone="purple" onClick={() => setShowEx((v) => !v)}>
+            <ImageIcon className="size-3" />
+            지금 하는 전시
+            {showEx && exData && <Count>{exData.meta.total}</Count>}
+          </Chip>
         </ChipRow>
+        {/* 전시 시간축(토글 켜졌을 때만). */}
+        {showEx && (
+          <ChipRow label="전시">
+            {(['today', 'weekend', 'month'] as const).map((tf) => (
+              <Chip key={tf} active={exTf === tf} tone="purple" onClick={() => setExTf(tf)}>
+                {tf === 'today' ? '오늘' : tf === 'weekend' ? '이번 주말' : '이번 달'}
+              </Chip>
+            ))}
+            {exData && (
+              <span className="ml-1 self-center text-[11px] text-muted-foreground">
+                {exData.meta.total}건
+                {exData.meta.noCoords > 0 && ` · 좌표없음 ${exData.meta.noCoords}건은 목록만`}
+              </span>
+            )}
+          </ChipRow>
+        )}
         <ChipRow label="종류">
           {KIND_OPTIONS.map((o) => (
             <Chip key={o.key} active={filters.kinds.includes(o.key)} onClick={() => onToggleKind(o.key)}>
@@ -380,10 +466,13 @@ export function MuseumsBrowser() {
           {hasEverLoaded && (
             <MuseumsMap
               points={points}
+              exhibitionPoints={exhibitionPoints}
               center={origin}
               isUserLocation={hasRealLocation}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              selectedExId={selectedExId}
+              onSelect={selectMuseum}
+              onSelectExhibition={selectExhibition}
               onUserMoveEnd={handleUserMoveEnd}
               flyTo={flyTo}
             />
@@ -394,6 +483,7 @@ export function MuseumsBrowser() {
               <LegendDot color={OPEN_STATE_COLOR.open} label="오늘 개관" />
               <LegendDot color={OPEN_STATE_COLOR.closed} label="오늘 휴관" />
               <LegendDot color={OPEN_STATE_COLOR.unknown} label="확인 필요" />
+              {showEx && <LegendDot color="#a855f7" label="지금 하는 전시" />}
             </div>
           )}
           {!hasEverLoaded && data.kind !== 'error' && (
@@ -453,6 +543,37 @@ export function MuseumsBrowser() {
           )}
 
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4">
+            {/* 축 2 — 지금 하는 전시 섹션(토글 켜졌을 때, 목록 상단). */}
+            {showEx && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 pt-1 text-[11px] font-semibold text-purple-300">
+                  <ImageIcon className="size-3.5" />
+                  지금 하는 전시
+                  {exData && <span className="font-normal text-muted-foreground">{exData.meta.total}건</span>}
+                </div>
+                <p className="text-[10px] text-muted-foreground/70">
+                  전시만 표시합니다(공연·음악·뮤지컬 제외). 문화정보 공연전시 데이터.
+                </p>
+                {exLoading && !exData && <div className="h-16 animate-pulse rounded-xl bg-muted" />}
+                {exError && <p className="text-[11px] text-muted-foreground">전시 정보를 불러오지 못했습니다.</p>}
+                {exData && exhibitionList.length === 0 && (
+                  <p className="py-2 text-[11px] text-muted-foreground">
+                    {exTf === 'today' ? '오늘' : exTf === 'weekend' ? '이번 주말' : '이번 달'} 진행 중인 전시가 없습니다.
+                  </p>
+                )}
+                {exhibitionList.slice(0, 60).map((e) => (
+                  <ExhibitionRow
+                    key={e.id}
+                    ex={e}
+                    selected={e.id === selectedExId}
+                    onSelect={() => selectExhibition(e.id)}
+                  />
+                ))}
+                <div className="!mt-3 border-b border-border pb-1 text-[11px] font-semibold text-foreground">
+                  박물관·미술관
+                </div>
+              </div>
+            )}
             {hasEverLoaded && !isLoading && museums.length === 0 && (
               <div className="flex flex-col items-center gap-2 py-12 text-center">
                 <Landmark className="size-8 text-muted-foreground/50" />
@@ -491,7 +612,7 @@ export function MuseumsBrowser() {
                 museum={m}
                 showDistance={showDistance}
                 selected={m.id === selectedId}
-                onSelect={() => setSelectedId(m.id)}
+                onSelect={() => selectMuseum(m.id)}
               />
             ))}
             {!hasEverLoaded &&
@@ -522,6 +643,13 @@ export function MuseumsBrowser() {
       {selected && (
         <div className="fixed inset-x-0 bottom-0 z-20 sm:inset-auto sm:bottom-4 sm:right-4 sm:w-[26rem]">
           <MuseumDetail museum={selected} showDistance={showDistance} onClose={() => setSelectedId(null)} />
+        </div>
+      )}
+
+      {/* 전시 상세 시트(박물관과 동일 위치, 하나만 열림). */}
+      {selectedEx && (
+        <div className="fixed inset-x-0 bottom-0 z-20 sm:inset-auto sm:bottom-4 sm:right-4 sm:w-[26rem]">
+          <ExhibitionDetail exhibition={selectedEx} onClose={() => setSelectedExId(null)} />
         </div>
       )}
 
@@ -559,14 +687,16 @@ function Chip({
   children,
 }: {
   active: boolean;
-  tone?: 'primary' | 'green';
+  tone?: 'primary' | 'green' | 'purple';
   onClick: () => void;
   children: React.ReactNode;
 }) {
   const activeCls =
     tone === 'green'
       ? 'border-green-500/50 bg-green-500/15 text-green-400'
-      : 'border-primary bg-primary text-primary-foreground';
+      : tone === 'purple'
+        ? 'border-purple-500/50 bg-purple-500/15 text-purple-300'
+        : 'border-primary bg-primary text-primary-foreground';
   return (
     <button
       type="button"
@@ -578,6 +708,53 @@ function Chip({
       )}
     >
       {children}
+    </button>
+  );
+}
+
+/** 전시 목록 행(컴팩트). 좌표 없으면 '지도 표시 안 됨' 표기. */
+function ExhibitionRow({
+  ex,
+  selected,
+  onSelect,
+}: {
+  ex: ExhibitionWithDistance;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const period = `${ex.startYmd.slice(4, 6)}.${ex.startYmd.slice(6, 8)}~${ex.endYmd.slice(4, 6)}.${ex.endYmd.slice(6, 8)}`;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        'flex w-full gap-3 rounded-xl border p-2.5 text-left transition-colors',
+        selected ? 'border-purple-500 bg-purple-500/10' : 'border-border bg-card hover:border-purple-500/40 hover:bg-accent',
+      )}
+    >
+      <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted">
+        {ex.image ? (
+          // eslint-disable-next-line @next/next/no-img-element -- 외부 CDN 썸네일
+          <img src={ex.image} alt="" loading="lazy" className="size-full object-cover"
+            onError={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')} />
+        ) : (
+          <div className="flex size-full items-center justify-center text-muted-foreground/40">
+            <ImageIcon className="size-6" />
+          </div>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-snug">{ex.title}</h3>
+        <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+          <MapPin className="size-3 shrink-0" />
+          {[ex.place, ex.area].filter(Boolean).join(' · ') || '장소 미상'}
+        </p>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-purple-300">{period}</span>
+          {ex.lat == null && <span className="text-muted-foreground/70">· 지도 표시 안 됨</span>}
+        </div>
+      </div>
     </button>
   );
 }

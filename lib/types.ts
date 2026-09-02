@@ -1,5 +1,6 @@
 import type { Museum, MuseumKind } from './museums';
 import type { OpenState } from './restday';
+import type { Exhibition, Timeframe } from './exhibitions';
 
 /** API 가 내려주는 박물관(정규화 Museum + 서버 계산 거리 + 오늘 개관 판정). */
 export interface MuseumWithDistance extends Museum {
@@ -67,5 +68,27 @@ export interface MuseumsResponse {
     introCoverage: number; // 휴관일 상세 병합률(부분 결측 고지용)
     /** 오늘여는곳 필터가 켜졌을 때, 그 때문에 제외된 건수(조용히 숨기지 않는다). */
     excludedByOpenToday: { closed: number; unknown: number } | null;
+  };
+}
+
+/* ── 축 2: 지금 하는 전시(B553457) ── */
+
+export interface ExhibitionWithDistance extends Exhibition {
+  /** 내 위치 기준 거리(km). 좌표 없는 항목은 null. */
+  distanceKm: number | null;
+}
+
+/** /api/exhibitions 응답. 좌표 있는 것(지도+목록) / 없는 것(목록 전용)을 나눠 정직하게. */
+export interface ExhibitionsResponse {
+  /** 좌표 보유 — 지도에 찍고 목록에도 나온다(거리순 또는 마감임박순). */
+  mapped: ExhibitionWithDistance[];
+  /** 좌표 없음 — 목록 전용(지도에 못 찍음). */
+  listOnly: ExhibitionWithDistance[];
+  meta: {
+    timeframe: Timeframe;
+    total: number; // 해당 시간축에 걸리는 전시 총수
+    mappedCount: number; // 좌표 보유 수
+    noCoords: number; // 좌표 없어 지도 제외 수(정직 노출)
+    truncated: boolean; // total > (mapped+listOnly 반환분)
   };
 }

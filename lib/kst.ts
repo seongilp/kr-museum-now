@@ -75,6 +75,15 @@ export function monthOf(day: number): number {
   return Number(dayToYmd(day).slice(4, 6));
 }
 
+/** 그 날이 속한 달의 말일(에폭 일수). "이번 달" 전시 필터 범위 계산용. */
+export function monthEndDay(day: number): number {
+  const ymd = dayToYmd(day);
+  const y = Number(ymd.slice(0, 4));
+  const m = Number(ymd.slice(4, 6)); // 1~12
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); // m월 0일 = m월 말일
+  return Date.UTC(y, m - 1, last) / DAY_MS;
+}
+
 /**
  * `20260901` → 에폭 일수. 형식이 어긋나거나 존재하지 않는 날짜면 null.
  * 자릿수만 보고 넘기면 `20260231` 이 3월 3일로 조용히 굴러가므로 되돌려 확인한다.

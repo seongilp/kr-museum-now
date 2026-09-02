@@ -27,6 +27,14 @@ export interface MapPoint {
   state: OpenState;
 }
 
+/** 전시 오버레이 포인트(좌표 보유분만). 박물관과 구분되는 보라 핀. */
+export interface ExhibitionPoint {
+  id: string;
+  lon: number;
+  lat: number;
+  title: string;
+}
+
 const BASEMAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 const KOREA_BOUNDS: [[number, number], [number, number]] = [
   [125.9, 33.1],
@@ -47,6 +55,20 @@ function toGeoJson(points: MapPoint[]): GeoJSON.FeatureCollection {
 }
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+const EX_SOURCE = 'exhibitions';
+const EX_COLOR = '#a855f7'; // 전시 = 보라(박물관 개관상태 색과 구분)
+
+function exToGeoJson(points: ExhibitionPoint[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: points.map((p) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+      properties: { id: p.id, title: p.title },
+    })),
+  };
+}
 
 /** 상태별 색을 지도 표현식으로. */
 const STATE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
@@ -69,18 +91,24 @@ export interface FlyTarget {
 
 export function MuseumsMap({
   points,
+  exhibitionPoints,
   center,
   isUserLocation,
   selectedId,
+  selectedExId,
   onSelect,
+  onSelectExhibition,
   onUserMoveEnd,
   flyTo,
 }: {
   points: MapPoint[];
+  exhibitionPoints?: ExhibitionPoint[];
   center: LatLon;
   isUserLocation: boolean;
   selectedId: string | null;
+  selectedExId?: string | null;
   onSelect: (id: string) => void;
+  onSelectExhibition?: (id: string) => void;
   onUserMoveEnd?: (b: MapBounds) => void;
   flyTo?: FlyTarget | null;
 }) {
@@ -91,14 +119,18 @@ export function MuseumsMap({
   const onSelectRef = useRef(onSelect);
   const onUserMoveEndRef = useRef(onUserMoveEnd);
   const pointsRef = useRef(points);
+  const exPointsRef = useRef(exhibitionPoints ?? []);
   const centerRef = useRef(center);
   const flyKeyRef = useRef<number | null>(null);
   const programMoveRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSelectExRef = useRef(onSelectExhibition);
 
   useEffect(() => void (onSelectRef.current = onSelect), [onSelect]);
+  useEffect(() => void (onSelectExRef.current = onSelectExhibition), [onSelectExhibition]);
   useEffect(() => void (onUserMoveEndRef.current = onUserMoveEnd), [onUserMoveEnd]);
   useEffect(() => void (pointsRef.current = points), [points]);
+  useEffect(() => void (exPointsRef.current = exhibitionPoints ?? []), [exhibitionPoints]);
   useEffect(() => void (centerRef.current = center), [center]);
 
   const readBounds = (map: MapLibreMap): MapBounds => {
@@ -171,14 +203,60 @@ export function MuseumsMap({
         },
       });
 
+      // 전시 오버레이 소스·레이어(박물관 위에). 보라 핀 + 라벨 + 선택 강조.
+      map.addSource(EX_SOURCE, { type: 'geojson', data: exToGeoJson(exPointsRef.current) });
+      map.addLayer({
+        id: 'ex-selected',
+        type: 'circle',
+        source: EX_SOURCE,
+        filter: ['==', ['get', 'id'], ''],
+        paint: { 'circle-radius': 13, 'circle-color': 'transparent', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 },
+      });
+      map.addLayer({
+        id: 'ex-point',
+        type: 'circle',
+        source: EX_SOURCE,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 5, 15, 9],
+          'circle-color': EX_COLOR,
+          'circle-opacity': 0.92,
+          'circle-stroke-color': '#0b0f19',
+          'circle-stroke-width': 1.5,
+        },
+      });
+      map.addLayer({
+        id: 'ex-label',
+        type: 'symbol',
+        source: EX_SOURCE,
+        minzoom: 12,
+        layout: {
+          'text-field': ['get', 'title'],
+          'text-size': 11,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-max-width': 9,
+          'text-allow-overlap': false,
+        },
+        paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#0b0f19', 'text-halo-width': 1.2 },
+      });
+
       loadedRef.current = true;
       map.getSource<maplibregl.GeoJSONSource>(SOURCE)?.setData(toGeoJson(pointsRef.current));
+      map.getSource<maplibregl.GeoJSONSource>(EX_SOURCE)?.setData(exToGeoJson(exPointsRef.current));
     });
 
     for (const layer of ['museum-point', 'museum-label']) {
       map.on('click', layer, (e) => {
         const id = e.features?.[0]?.properties?.id as string | undefined;
         if (id) onSelectRef.current(id);
+      });
+      map.on('mouseenter', layer, () => void (map.getCanvas().style.cursor = 'pointer'));
+      map.on('mouseleave', layer, () => void (map.getCanvas().style.cursor = ''));
+    }
+    for (const layer of ['ex-point', 'ex-label']) {
+      map.on('click', layer, (e) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        if (id) onSelectExRef.current?.(id);
       });
       map.on('mouseenter', layer, () => void (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => void (map.getCanvas().style.cursor = ''));
@@ -233,6 +311,14 @@ export function MuseumsMap({
     map.getSource<maplibregl.GeoJSONSource>(SOURCE)?.setData(points.length ? toGeoJson(points) : EMPTY);
   }, [points]);
 
+  /* 전시 오버레이 갱신. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    const ex = exhibitionPoints ?? [];
+    map.getSource<maplibregl.GeoJSONSource>(EX_SOURCE)?.setData(ex.length ? exToGeoJson(ex) : EMPTY);
+  }, [exhibitionPoints]);
+
   /* 중심 이동 + (실제 위치일 때만) 파란 '내 위치' 점. */
   useEffect(() => {
     const map = mapRef.current;
@@ -259,6 +345,16 @@ export function MuseumsMap({
     const hit = pointsRef.current.find((p) => p.id === selectedId);
     if (hit) map.easeTo({ center: [hit.lon, hit.lat], zoom: Math.max(map.getZoom(), 13), duration: 500 });
   }, [selectedId]);
+
+  /* 전시 선택 강조 + 화면으로 끌어오기. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    map.setFilter('ex-selected', ['==', ['get', 'id'], selectedExId ?? '']);
+    if (!selectedExId) return;
+    const hit = exPointsRef.current.find((p) => p.id === selectedExId);
+    if (hit) map.easeTo({ center: [hit.lon, hit.lat], zoom: Math.max(map.getZoom(), 13), duration: 500 });
+  }, [selectedExId]);
 
   return <div ref={containerRef} className="size-full" />;
 }
