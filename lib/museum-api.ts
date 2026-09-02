@@ -7,11 +7,11 @@
  * 가 나는데 "미신청"과 문자열이 똑같아 오진한다. 키 값은 절대 로그로 출력하지 않는다.
  *
  * ── 오퍼레이션 & 쿼터(오퍼레이션당 1,000/일) ──
- *  - areaBasedList2: cat3 4종(박물관·기념관·전시관·미술관)을 각 1페이지(numOfRows=300, 최대 230건)로.
- *    → **하루 4콜.**
- *  - detailIntro2: 목록 전건(약 629건)을 배치로. **하루 최대 ~629콜.** 인스턴스 간 중복 빌드는
- *    museum-cache 가 조립 결과를 통째로 공유 Data Cache(self-fetch)에 하루 1엔트리로 캐시해 막는다
- *    — 그래서 detailIntro2 상류 호출은 하루 실질 ~629 < 1,000.
+ *  - areaBasedList2: 문화시설 전량을 **1콜**(numOfRows=5000)로 받아 lclsSystm3 로 거른다. → 하루 몇 콜.
+ *  - detailIntro2: 박물관류가 **≈1,680건**이라 한 번에·하루에 다 못 받는다(쿼터 1,000 초과 + throttle
+ *    로 55s당 ~680건 한계). → museum-cache 가 **일일 상한(≈800)으로 회전 수집(rotation)**하고, 상세
+ *    원문(휴관일 등)은 준정적이라 인스턴스 메모리에 며칠 누적한다. 미수집분은 openToday=unknown 으로
+ *    두고 개수를 고지한다(결측을 값인 척 금지). 며칠에 걸쳐 전량 커버.
  *
  * ── ★ 처리율 = 토큰버킷 throttle(실측 2026-09-02, 핵심) ──
  * KorService2 detailIntro2 는 **버스트 ~60건까지는 자유롭지만 그 이상을 한꺼번에 던지면 대부분
@@ -25,17 +25,12 @@
  * 22=일일쿼터(재시도 말고 배치 조기중단). 모든 fetch 에 AbortSignal.timeout, 실패는 예외.
  */
 
-import {
-  CAT3_CODES,
-  itemsOf,
-  parseApiError,
-  type MuseumIntroRaw,
-  type MuseumListRaw,
-} from './museums';
+import { itemsOf, kindOf, parseApiError, type MuseumIntroRaw, type MuseumListRaw } from './museums';
 
 const HOST = 'https://apis.data.go.kr/B551011/KorService2';
 const TIMEOUT_MS = 6000;
-const LIST_ROWS = 300; // cat3 최대 ~230 → 한 페이지에 담긴다.
+/** 문화시설 전량(≈2,723)을 1콜에 받는다. 우리는 클라이언트에서 lclsSystm3 로 박물관류만 거른다. */
+const LIST_ROWS = 5000;
 const COMMON = 'MobileOS=ETC&MobileApp=kr-museum-now&_type=json';
 
 /** detailIntro2 배치 설정. */
@@ -94,18 +89,16 @@ async function fetchJson(url: string): Promise<unknown> {
   return json;
 }
 
-/** cat3 한 분류의 목록(전국). */
-async function fetchListByCat3(cat3: string): Promise<MuseumListRaw[]> {
+/**
+ * 문화시설 전량을 1콜로 받아 **lclsSystm3 로 박물관류만** 거른다(cat3 는 절반이 빈값이라 못 쓴다,
+ * museums.ts 참조). 좌표·이름·주소·lclsSystm3 가 이 응답에 함께 온다. → areaBasedList2 하루 1콜.
+ */
+export async function fetchMuseumList(): Promise<MuseumListRaw[]> {
   const url =
     `${HOST}/areaBasedList2?serviceKey=${serviceKey()}&${COMMON}` +
-    `&contentTypeId=14&cat1=A02&cat2=A0206&cat3=${cat3}&arrange=A&numOfRows=${LIST_ROWS}&pageNo=1`;
-  return itemsOf<MuseumListRaw>(await fetchJson(url));
-}
-
-/** 박물관류 4개 cat3 목록 전량(상세 없이). cat3 가 이미 붙어 온다. */
-export async function fetchMuseumList(): Promise<MuseumListRaw[]> {
-  const lists = await Promise.all(CAT3_CODES.map((c) => fetchListByCat3(c)));
-  return lists.flat();
+    `&contentTypeId=14&arrange=A&numOfRows=${LIST_ROWS}&pageNo=1`;
+  const all = itemsOf<MuseumListRaw>(await fetchJson(url));
+  return all.filter((r) => kindOf(r.lclsSystm3) !== null);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -134,17 +127,26 @@ export async function fetchMuseumIntro(contentId: string): Promise<MuseumIntroRa
   );
 }
 
+/** 배치 결과. results 는 **성공분만**(실패는 넣지 않아 다음 회전에 재시도된다). */
+export interface IntrosBatchResult {
+  /** 성공한 상세(휴관일 없음=null 도 성공으로 저장). */
+  results: Map<string, MuseumIntroRaw | null>;
+  /** 실제로 시작한 요청 수(쿼터 회계용 — 성공/실패 무관). */
+  attempted: number;
+  /** 일일 쿼터(code 22) 소진을 만났는가. */
+  quotaHit: boolean;
+}
+
 /**
- * contentId 목록의 상세를 동시성 풀로 배치 호출. 개별 실패는 null 로 흡수(그 항목은 휴관일
- * 원문이 없을 뿐, 전체가 무너지면 안 된다). 시간 예산(BUDGET_MS)이 다하면 남은 요청을 시작하지
- * 않고 반환한다 — 이미 받은 것 + Data Cache 로 그날 다음 빌드가 마저 채운다.
+ * contentId 목록의 상세를 동시성 풀 + pacer 로 배치 호출. 개별 실패는 **넣지 않는다**(다음 회전에
+ * 재시도). 시간 예산(BUDGET_MS)이 다하거나 code 22 를 만나면 남은 요청을 시작하지 않고 반환한다.
+ * attempted 로 실제 소비한 요청 수를 알려 호출부가 일일 상한을 회계한다.
  */
-export async function fetchIntrosBatch(
-  ids: string[],
-): Promise<Map<string, MuseumIntroRaw | null>> {
-  const out = new Map<string, MuseumIntroRaw | null>();
+export async function fetchIntrosBatch(ids: string[]): Promise<IntrosBatchResult> {
+  const results = new Map<string, MuseumIntroRaw | null>();
   let cursor = 0;
-  let dailyQuotaHit = false;
+  let attempted = 0;
+  let quotaHit = false;
   const deadline = Date.now() + BUDGET_MS;
 
   // pacer: 다음 요청을 출발시킬 수 있는 가장 이른 시각. 워커들이 이 슬롯을 나눠 가져 시작 간격을
@@ -158,19 +160,20 @@ export async function fetchIntrosBatch(
   }
 
   async function worker(): Promise<void> {
-    while (cursor < ids.length && !dailyQuotaHit && Date.now() < deadline) {
+    while (cursor < ids.length && !quotaHit && Date.now() < deadline) {
       const id = ids[cursor];
       cursor += 1;
       await pace();
+      attempted += 1;
       try {
-        out.set(id, await fetchMuseumIntro(id));
+        results.set(id, await fetchMuseumIntro(id));
       } catch (e) {
-        out.set(id, null); // 개별 실패는 흡수(부분 결측), 배치는 계속.
-        if (e instanceof MuseumApiFailure && e.code === DAILY_QUOTA_CODE) dailyQuotaHit = true;
+        // 실패는 저장하지 않는다(다음 회전 재시도). 단 code 22 는 배치를 조기 중단한다.
+        if (e instanceof MuseumApiFailure && e.code === DAILY_QUOTA_CODE) quotaHit = true;
       }
     }
   }
   const workers = Array.from({ length: Math.min(DETAIL_CONCURRENCY, ids.length) }, worker);
   await Promise.all(workers);
-  return out;
+  return { results, attempted, quotaHit };
 }

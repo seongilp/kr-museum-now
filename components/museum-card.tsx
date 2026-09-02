@@ -1,6 +1,6 @@
 'use client';
 
-import { Building2, Clock, Landmark, MapPin, Palette, Image as ImageIcon } from 'lucide-react';
+import { Building2, Clock, FlaskConical, Landmark, MapPin, Palette, Image as ImageIcon } from 'lucide-react';
 
 import type { MuseumWithDistance } from '@/lib/types';
 import type { MuseumKind } from '@/lib/museums';
@@ -18,6 +18,7 @@ const KIND_ICON: Record<MuseumKind, React.ReactNode> = {
   gallery: <Palette className="size-2.5" />,
   exhibition: <ImageIcon className="size-2.5" />,
   memorial: <Building2 className="size-2.5" />,
+  science: <FlaskConical className="size-2.5" />,
 };
 
 export function MuseumCard({

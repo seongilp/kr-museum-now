@@ -25,6 +25,7 @@ export const KIND_OPTIONS: KindOption[] = [
   { key: 'gallery', label: KIND_LABEL.gallery },
   { key: 'exhibition', label: KIND_LABEL.exhibition },
   { key: 'memorial', label: KIND_LABEL.memorial },
+  { key: 'science', label: KIND_LABEL.science },
 ];
 
 /**

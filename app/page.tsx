@@ -14,7 +14,7 @@ export default function Landing() {
       <div className="flex flex-1 flex-col justify-center">
         <div className="mb-3 inline-flex w-fit items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
           <Landmark className="size-3.5 text-primary" />
-          한국관광공사 공식 데이터 · 전국 박물관·미술관·전시관·기념관
+          한국관광공사 공식 데이터 · 전국 박물관·미술관·전시관·기념관·과학관 1,600여 곳
         </div>
 
         <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
@@ -49,7 +49,7 @@ export default function Landing() {
             현재 위치 기준 가까운 곳부터. 위치를 못 잡으면 서울 기준으로 보여줍니다.
           </Feature>
           <Feature icon={<Palette className="size-5 text-primary" />}>
-            종류 필터: 박물관 · 미술관 · 전시관 · 기념관.
+            종류 필터: 박물관 · 미술관 · 전시관 · 기념관 · 과학관.
           </Feature>
           <Feature icon={<Search className="size-5 text-primary" />}>
             ⌘K 로 이름 검색과 필터를 한곳에서. 지도를 옮기면 그 지역이 나옵니다.

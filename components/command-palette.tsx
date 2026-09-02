@@ -2,7 +2,16 @@
 
 import { Command } from 'cmdk';
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, Clock, Image as ImageIcon, Landmark, MapPin, Palette, Search } from 'lucide-react';
+import {
+  Building2,
+  Clock,
+  FlaskConical,
+  Image as ImageIcon,
+  Landmark,
+  MapPin,
+  Palette,
+  Search,
+} from 'lucide-react';
 
 import { KIND_OPTIONS, SIDO_OPTIONS, type Filters } from '@/lib/facets';
 import { KIND_LABEL, type MuseumKind } from '@/lib/museums';
@@ -25,6 +34,7 @@ const KIND_ICON: Record<MuseumKind, React.ReactNode> = {
   gallery: <Palette className="size-4" />,
   exhibition: <ImageIcon className="size-4" />,
   memorial: <Building2 className="size-4" />,
+  science: <FlaskConical className="size-4" />,
 };
 
 export function CommandPalette({

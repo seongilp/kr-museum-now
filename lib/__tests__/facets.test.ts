@@ -18,6 +18,7 @@ const museum = (over: Partial<Museum>): Museum => ({
   hours: null,
   fee: null,
   parking: null,
+  source: 'lcls',
   ...over,
 });
 
