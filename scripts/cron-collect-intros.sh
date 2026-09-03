@@ -39,8 +39,10 @@ npm run collect:intros -- "$@"
 
 node -e "const s=require('./data/intros.json'); if(!s||typeof s.byId!=='object') process.exit(1); console.log('byId:', Object.keys(s.byId).length, 'collectedAt:', s.collectedAt)"
 
-if git diff --quiet -- data/intros.json; then
-  echo "변경 없음 — 커밋 생략"
+# collectedAt 만 바뀐 건(쿼터 소진으로 0건 수집 등) 커밋하지 않는다 — 빈 커밋마다 Vercel 이 재배포된다.
+if git diff --quiet -I '"collectedAt"' -- data/intros.json; then
+  git checkout -q -- data/intros.json
+  echo "실질 변경 없음 — 커밋 생략"
   exit 0
 fi
 
