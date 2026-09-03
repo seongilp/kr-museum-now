@@ -37,3 +37,6 @@ next-env.d.ts
 
 # gstack 브라우즈 감사 로그
 .gstack/
+
+.collect.lock
+logs/
