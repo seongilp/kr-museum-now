@@ -39,10 +39,13 @@
 - **카탈로그 캐시(쿼터 방어의 핵심, `lib/museum-cache.ts`).**
   - `detailIntro2` 는 토큰버킷 throttle(버스트 ~60, 코드 23)이 있어 **pacer(≈12.5 req/s) + 재시도**로
     조여야 통과한다(629건 ≈ 50s, maxDuration 60s 내). — `lib/museum-api.ts`
-  - **★ 상세 회전 수집(rotation).** 1,680곳 상세는 (a) 쿼터 1,000/일, (b) throttle 로 55s당 ~680건
-    한계라 하루에 다 못 받는다. 그래서 상세 원문(준정적)은 **인스턴스 메모리에 며칠 누적**(TTL 3일)하고,
-    매 빌드마다 아직 없는 것부터 **일일 상한 ≈900건**까지만 회전 수집한다 → **약 2일에 걸쳐 전량 커버.**
-    detailIntro2 상류 ≤ ~900/일 < 1,000.
+  - **★ 상세는 정적 스냅샷이 기본이다(`data/intros.json`).** 1,680곳 상세는 (a) 쿼터 1,000/일,
+    (b) throttle 로 55s당 ~680건 한계라 런타임으로는 하루에 다 못 받고, 인스턴스 메모리는 인스턴스가
+    바뀌면 0% 로 돌아간다. 그래서 `npm run collect:intros`(`scripts/collect-intros.ts`, 재개 가능·code 22
+    에서 저장 후 중단·실행당 ≤800)가 **오프라인에서 전량을 모아 리포에 커밋**하고, GitHub Actions
+    (`.github/workflows/collect-intros.yml`, 매주 월·화 KST 03:00, `--force` 로 가장 오래된 것부터 갱신)이
+    이를 자동 갱신한다. 런타임 회전(rotation)은 **정적본에 없는 신규 id 만** 일일 ≤150건 채우고, 그 결과가
+    정적본 위에 덮어써진다(`lib/intro-static.ts`, 순수 함수·테스트). `introCoverage` 는 둘의 합산.
   - **완전 빌드**(전량 커버)만 `/api/catalog` self-fetch(`next:{revalidate}`)로 자정까지 공유 Data
     Cache(200). **부분 빌드(회전 중)** 는 목록을 그대로 내보내되 짧게(12분)만 캐시하고 공유 캐시엔 안
     태운다(`/api/catalog` 503 → Next 는 비-2xx 를 담지 않음) → 다음 빌드가 회전을 이어간다.

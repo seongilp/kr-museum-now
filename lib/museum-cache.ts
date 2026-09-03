@@ -16,27 +16,39 @@
  *     않는다. 목록 자체가 성공하면 **항상 200** 으로 self-fetch(`/api/catalog`) Data Cache 에 태워
  *     인스턴스 간 공유한다(자정까지). → **콜드 인스턴스도 <1s 로 목록을 받는다.** 절대 목록 응답이
  *     상세 회전을 기다리지 않는다.
- *  2) **상세(intro)** — 준정적(휴관일 원문은 매일 안 바뀜)이라 **인스턴스 메모리(introStore, TTL 3일)**
- *     에 누적한다. 회전 수집(rotation)은 **요청 경로 밖에서만** 돈다:
+ *  2) **상세(intro)** — 준정적(휴관일 원문은 매일 안 바뀜)이라 **★ 리포에 커밋된 정적 스냅샷
+ *     (`data/intros.json`, `scripts/collect-intros.ts` 가 오프라인 수집, 주간 GitHub Actions 갱신)이
+ *     기본**이다. 인스턴스가 바뀌어도 0% 로 돌아가지 않는다. 그 위에 **인스턴스 메모리(introStore,
+ *     TTL 3일)** 가 덮어쓴다 — 회전 수집(rotation)은 **정적본에 없는 신규 id 만** 대상으로, **요청 경로
+ *     밖에서만** 돈다:
  *       (a) `/api/warm` 크론(하루 1회) 가 `runIntroRotation()` 을 직접 호출,
  *       (b) 공개 목록 응답을 내보낸 뒤 `after()` 로 **백그라운드 회전 킥**(그 인스턴스 self-heal).
- *     둘 다 일일 상한(DAILY_DETAIL_CAP)·시간예산·code22 로 스스로 멈춘다. 며칠에 걸쳐 전량 커버.
- *  3) 목록 응답 시점에 **그 인스턴스에 쌓인 상세만 병합**(mergeIntros)한다 — "있는 만큼" 정직하게.
- *     미수집분은 restRaw=null → 라우트가 openToday 를 unknown 으로 두고 introCoverage 로 고지한다.
+ *     둘 다 일일 상한(DAILY_DETAIL_CAP)·시간예산·code22 로 스스로 멈춘다.
+ *  3) 목록 응답 시점에 **정적본 + 그 인스턴스에 쌓인 상세를 병합**(mergeIntros)한다 — "있는 만큼"
+ *     정직하게. 미수집분은 restRaw=null → 라우트가 openToday 를 unknown 으로 두고 introCoverage
+ *     (정적+동적 합산)로 고지한다.
  *
  * ── 쿼터 회계 ──
- * detailIntro2 시작 요청 수를 KST 하루 단위로 세어 DAILY_DETAIL_CAP 에서 멈춘다(< 1,000). 회전은
- * 인스턴스당 한 번에 하나만 돌고(rotationInflight), 하루치 커버 완료·쿼터 소진 시 그날 회전을
- * 접는다(rotationDone) — 백그라운드 킥이 빈 회전을 반복하지 않게.
+ * detailIntro2 시작 요청 수를 KST 하루 단위로 세어 DAILY_DETAIL_CAP 에서 멈춘다. 상한은 **오프라인
+ * 수집기(하루 ≤800)와 같은 키·같은 일일 쿼터(1,000)를 나눠 쓰므로 작게(150)** 둔다 — 정적본이 기본이라
+ * 런타임 회전은 신규 id 몇 건만 채우면 된다. 회전은 인스턴스당 한 번에 하나만 돌고(rotationInflight),
+ * 하루치 커버 완료·쿼터 소진 시 그날 회전을 접는다(rotationDone).
  */
 
 import { fetchIntrosBatch, fetchMuseumList, MuseumApiFailure, type IntrosBatchResult } from './museum-api';
 import { mergeIntros, normalizeMuseum, type Museum, type MuseumIntroRaw } from './museums';
 import { msUntilKstMidnight, secondsUntilKstMidnight, todayYmdKst } from './kst';
 import { selfBaseUrl } from './self';
+import { idsMissingIntro, makeIntroLookup, parseSnapshot, type IntroSnapshot } from './intro-static';
+import staticIntrosJson from '@/data/intros.json';
 
-/** detailIntro2 일일 상한(쿼터 1,000 에 areaBasedList2·안전마진 남김). 회전 수집의 하루 예산. */
-const DAILY_DETAIL_CAP = 900;
+/**
+ * detailIntro2 런타임 일일 상한. 오프라인 수집기(`npm run collect:intros`, ≤800/일)와 같은 일일 쿼터
+ * (1,000/op)를 나눠 쓰므로 작게 둔다. 정적본이 기본이라 런타임은 신규 id 만 채우면 된다.
+ */
+const DAILY_DETAIL_CAP = 150;
+/** 리포에 커밋된 정적 상세 스냅샷. 모양이 깨져 있어도 런타임을 죽이지 않는다(빈 스냅샷으로 강등). */
+const STATIC_INTROS: IntroSnapshot = parseSnapshot(staticIntrosJson);
 /** 상세 원문(준정적) 메모리 보존 기간. 이 안엔 재수집 안 함(회전 예산 절약). */
 const INTRO_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -188,7 +200,8 @@ async function doRotation(): Promise<RotationResult> {
 
   const ids = list.map((r) => r.contentid?.trim()).filter((x): x is string => !!x);
   const remaining = Math.max(0, DAILY_DETAIL_CAP - detailBudget.attempted);
-  const uncovered = ids.filter((id) => !introStore.has(id));
+  // 정적본에 있는 id 는 쿼터를 쓰지 않는다 — 회전은 정적본·메모리 어디에도 없는 신규 id 만.
+  const uncovered = idsMissingIntro(ids, STATIC_INTROS, (id) => introStore.has(id));
   const toFetch = uncovered.slice(0, remaining);
 
   let quotaHit = false;
@@ -201,7 +214,7 @@ async function doRotation(): Promise<RotationResult> {
     quotaHit = batch.quotaHit;
   }
 
-  const covered = ids.filter((id) => introStore.has(id)).length;
+  const covered = ids.length - idsMissingIntro(ids, STATIC_INTROS, (id) => introStore.has(id)).length;
   const budgetRemaining = Math.max(0, DAILY_DETAIL_CAP - detailBudget.attempted);
   // 그날 회전을 접을 조건: 전량 커버 / 쿼터 소진 / 예산 소진.
   if (covered >= ids.length || quotaHit || budgetRemaining === 0) rotationDone.done = true;
@@ -243,11 +256,24 @@ export function rotationPending(): boolean {
  * 3) 공개 카탈로그 = 목록(빠름·공유) + 그 인스턴스에 쌓인 상세 병합(있는 만큼)
  * ──────────────────────────────────────────────────────────────── */
 
-/** 공개 라우트가 호출. 목록은 즉시(공유 캐시), 상세는 introStore 에서 병합. 회전을 절대 안 기다린다. */
-export async function getCatalogCached(): Promise<Catalog> {
-  const list = await getListCatalogShared();
-  const { museums, introCoverage } = mergeIntros(list.museums, (id) =>
+/** 정적 스냅샷 위에 introStore 가 덮어쓰는 단일 lookup(순수 규칙은 intro-static.ts). */
+function introLookup(): (id: string) => MuseumIntroRaw | null | undefined {
+  return makeIntroLookup(STATIC_INTROS, (id) =>
     introStore.has(id) ? (introStore.get(id)?.intro ?? null) : undefined,
   );
+}
+
+/**
+ * 공개 라우트가 호출. 목록은 즉시(공유 캐시), 상세는 정적본 → introStore 순으로 병합(introCoverage 는
+ * 둘의 합산). 회전을 절대 안 기다린다.
+ */
+export async function getCatalogCached(): Promise<Catalog> {
+  const list = await getListCatalogShared();
+  const { museums, introCoverage } = mergeIntros(list.museums, introLookup());
   return { museums, introCoverage, noCoords: list.noCoords };
+}
+
+/** 정적 스냅샷 메타(운영 리포팅·디버깅용). */
+export function staticIntroInfo(): { count: number; collectedAt: string } {
+  return { count: Object.keys(STATIC_INTROS.byId).length, collectedAt: STATIC_INTROS.collectedAt };
 }

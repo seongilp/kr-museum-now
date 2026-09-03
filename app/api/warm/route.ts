@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 
-import { runIntroRotation } from '@/lib/museum-cache';
+import { runIntroRotation, staticIntroInfo } from '@/lib/museum-cache';
 
 /**
  * 카탈로그 예열(cron). 요청 경로 밖에서 두 가지를 해 둔다:
  *
- *  1) **상세 회전 수집**(`runIntroRotation`) — 이 인스턴스의 introStore 를 그날 예산(≤900)만큼
- *     채운다. 회전은 목록 응답을 붙잡지 않으므로 여기(크론)와 공개 라우트의 `after()` 백그라운드
- *     킥에서만 돈다. 며칠에 걸쳐 전량 커버.
+ *  1) **상세 회전 수집**(`runIntroRotation`) — 정적 스냅샷(`data/intros.json`)에 없는 신규 id 만
+ *     이 인스턴스의 introStore 에 그날 예산(≤150)만큼 채운다. 회전은 목록 응답을 붙잡지 않으므로
+ *     여기(크론)와 공개 라우트의 `after()` 백그라운드 킥에서만 돈다.
  *  2) **목록 공유 캐시 + CDN 예열** — 자기 공개 URL(`/api/museums`, 좌표 없음)을 때려 목록 카탈로그를
  *     인스턴스 간 공유 Data Cache 와 CDN(SWR 헤더)에 채운다. → 첫 사용자가 콜드 목록 빌드를 안 밟는다.
  *
@@ -15,7 +15,8 @@ import { runIntroRotation } from '@/lib/museum-cache';
  *   창이 KST 자정에 만료된 뒤 그날 첫 수집을 이 예열이 커버하게 한다. "오늘 여는가" 판정도 자정에
  *   바뀌므로 예열이 새 하루의 첫 계산을 미리 돌려 둔다.
  *
- * 쿼터: 하루 1회 = detailIntro2 ≤900콜(회전) + areaBasedList2 소수(오퍼레이션당 1,000/일 한도 내).
+ * 쿼터: 하루 1회 = detailIntro2 ≤150콜(회전; 오프라인 수집기 ≤800 과 같은 일일 쿼터를 나눠 씀) +
+ * areaBasedList2 소수(오퍼레이션당 1,000/일 한도 내).
  * 회전은 시간예산(museum-api BUDGET_MS=55s)·code22 로 스스로 멈춘다.
  *
  * fail closed: CRON_SECRET 없으면 503, 안 맞으면 401.
@@ -79,6 +80,7 @@ export async function GET(request: Request) {
         warmedAt: new Date().toISOString(),
         ms: Date.now() - started,
         listWarm,
+        staticIntros: staticIntroInfo(),
         rotation,
       },
       { headers: { 'Cache-Control': 'no-store' } },
