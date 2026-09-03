@@ -339,7 +339,7 @@ export function MuseumsBrowser() {
       <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
         <Link href="/" className="flex items-center gap-2 text-sm font-bold">
           <Landmark className="size-4 text-primary" />
-          코리아뮤지엄
+          박물관나우
         </Link>
         <div className="flex items-center gap-2">
           {meta && (

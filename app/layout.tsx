@@ -18,7 +18,7 @@ const SITE = 'https://kr-museum-now.vercel.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  title: '코리아뮤지엄 — 내 주변 박물관·미술관, 오늘 여는 곳',
+  title: '박물관나우 — 내 주변 박물관·미술관, 오늘 여는 곳',
   description:
     '전국 박물관·미술관·전시관·기념관을 지도에서. 월요일 휴관으로 헛걸음하지 않게 "오늘 여는 곳"만 골라 보고, 관람시간·입장료·주차 정보까지 한눈에. 한국관광공사 공식 데이터.',
   keywords: [
@@ -32,13 +32,15 @@ export const metadata: Metadata = {
     '전시',
     '내 주변 박물관',
   ],
+  applicationName: '박물관나우',
+  appleWebApp: { title: '박물관나우' },
   alternates: { canonical: SITE },
   openGraph: {
-    title: '코리아뮤지엄 — 내 주변 박물관·미술관, 오늘 여는 곳',
+    title: '박물관나우 — 내 주변 박물관·미술관, 오늘 여는 곳',
     description:
       '전국 박물관·미술관을 지도에서. "오늘 여는 곳"만 걸러 헛걸음 없이. 관람시간·입장료·휴관일까지.',
     url: SITE,
-    siteName: '코리아뮤지엄',
+    siteName: '박물관나우',
     locale: 'ko_KR',
     type: 'website',
   },
