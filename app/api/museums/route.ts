@@ -5,6 +5,7 @@ import { nearest, SEOUL, type LatLon } from '@/lib/geo';
 import { swrCacheControl } from '@/lib/cache-control';
 import { kstToday } from '@/lib/kst';
 import { openTodayState, type OpenState } from '@/lib/restday';
+import { passesOpenTodayFilter } from '@/lib/museum-ui';
 import { KIND_OPTIONS, SIDO_OPTIONS, matchesFilters, type Filters } from '@/lib/facets';
 import type { Museum, MuseumKind } from '@/lib/museums';
 import type { MuseumWithDistance, MuseumsResponse, QueryMode } from '@/lib/types';
@@ -17,8 +18,8 @@ import type { MuseumWithDistance, MuseumsResponse, QueryMode } from '@/lib/types
  *
  * ★ 오늘 여는가(openToday): restRaw → restday.ts 로 KST '오늘' 기준 판정한다. 이 판정은 날짜에
  *   의존하므로 캐시된 정규화 객체가 아니라 여기(라우트)에서 매 요청 계산한다(≈629건, ~1ms).
- *   openTodayOnly 필터는 'open' 만 남기고 'closed'/'unknown' 을 제외하되, **몇 곳이 왜 제외됐는지
- *   meta.excludedByOpenToday 로 정직하게 밝힌다**(조용히 숨기지 않는다).
+ *   openTodayOnly 필터는 휴관이 확실한 'closed' 만 제외한다(unknown 은 '추정 개관'으로 포함 — 표시층
+ *   정책, lib/museum-ui.ts). 제외 건수는 meta.excludedByOpenToday 로 밝힌다.
  *
  * 캐시 판단:
  *  - **fallback 만 CDN 캐시**(SWR). 좌표·영역이 없어 전 사용자 동일. 단, 오늘 판정이 KST 자정에
@@ -98,7 +99,7 @@ export async function GET(req: Request) {
       openToday: openTodayState(m.restRaw, today) as OpenState,
     }));
 
-    // 1) 종류·지역 필터. 2) bounds 모드면 영역으로 한 번 더. 3) openTodayOnly 면 'open' 만.
+    // 1) 종류·지역 필터. 2) bounds 모드면 영역으로 한 번 더. 3) openTodayOnly 면 'closed' 제외.
     let pool = withOpen.filter((m) => matchesFilters(m, filters));
     if (bounds) {
       pool = pool.filter(
@@ -114,9 +115,9 @@ export async function GET(req: Request) {
     let excludedByOpenToday: { closed: number; unknown: number } | null = null;
     if (filters.openTodayOnly) {
       const closed = pool.filter((m) => m.openToday === 'closed').length;
-      const unknown = pool.filter((m) => m.openToday === 'unknown').length;
-      excludedByOpenToday = { closed, unknown };
-      pool = pool.filter((m) => m.openToday === 'open');
+      // unknown 은 추정 개관으로 포함되므로 제외 건수 0(필드는 호환을 위해 유지).
+      excludedByOpenToday = { closed, unknown: 0 };
+      pool = pool.filter((m) => passesOpenTodayFilter(m.openToday));
     }
 
     const ranked = nearest(pool, origin, LIMIT);

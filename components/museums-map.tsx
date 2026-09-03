@@ -14,7 +14,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
  * 박물관 지도. MapLibre **v5** — v6 는 Turbopack 에서 워커 로딩이 실패해 지도가 조용히 안 뜬다
  * (메모리 기록). 좌표는 WGS84(lon,lat)를 API 가 직접 준다.
  *
- * ★ 핀 색 = 오늘 개관 상태(open 초록 / closed 빨강 / unknown 회색). 이 앱의 핵심 값이 "오늘
+ * ★ 핀 색 = 오늘 개관 상태(open·unknown(추정 개관) 초록 / closed 빨강). 이 앱의 핵심 값이 "오늘
  *   여는가"라 지도에서 바로 읽히는 게 맞다. 대신 범례를 함께 그려 색의 의미를 명시한다(범례 없는
  *   다색 지도가 오히려 헷갈린다는 함정을 범례로 방어).
  */

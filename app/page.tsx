@@ -42,8 +42,8 @@ export default function Landing() {
 
         <ul className="mt-12 grid gap-4 text-sm sm:grid-cols-2">
           <Feature icon={<Clock className="size-5 text-green-400" />}>
-            <b className="text-foreground">오늘 여는 곳</b> 필터 — 휴관일을 해석해 지금 문 연 곳만.
-            판정이 애매하면 &ldquo;확인 필요&rdquo;로 정직하게 구분합니다.
+            <b className="text-foreground">오늘 여는 곳</b> 필터 — 휴관일을 해석해 오늘 휴관이 확실한 곳을
+            뺍니다. 휴관 정보는 일부만 반영되니 방문 전 확인하세요.
           </Feature>
           <Feature icon={<MapPin className="size-5 text-primary" />}>
             현재 위치 기준 가까운 곳부터. 위치를 못 잡으면 서울 기준으로 보여줍니다.

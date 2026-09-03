@@ -25,18 +25,13 @@ import {
   toggleKind,
   type Filters,
 } from '@/lib/facets';
-import { OPEN_STATE_COLOR } from '@/lib/museum-ui';
+import { OPEN_INFO_NOTICE, OPEN_STATE_COLOR } from '@/lib/museum-ui';
 import { cn } from '@/lib/utils';
 import { MuseumCard } from '@/components/museum-card';
 import { MuseumDetail } from '@/components/museum-detail';
 import { MuseumsMap, type FlyTarget, type MapPoint } from '@/components/museums-map';
 import { CommandPalette } from '@/components/command-palette';
 
-/**
- * 상세(휴관일) 병합률이 이 미만이면 "오늘 여는가" 판정을 신뢰할 수 없다 → 필터 비활성화 + 사유 고지.
- * 상세와 목록을 결합 해제하는 임계치(목록은 이보다 낮아도 항상 표시).
- */
-const OPEN_JUDGE_MIN = 0.5;
 
 /** 위치 상태를 명확히 구분(무한 로딩 금지). */
 type GeoState =
@@ -327,14 +322,8 @@ export function MuseumsBrowser() {
 
   const excluded = meta?.excludedByOpenToday;
 
-  // ★ 목록/상세 결합 해제: 상세(휴관일) 병합률이 낮으면 "오늘 여는가"를 신뢰할 수 없다. 그때는
-  // 필터를 비활성화하고 이유를 밝힌다 — 조용히 전부 unknown 으로 두고 0건을 뱉지 않기 위함(팀 지시).
-  // meta 가 아직 없으면(첫 로드) 판정 가능으로 낙관한다.
-  const openJudgeable = (meta?.introCoverage ?? 1) >= OPEN_JUDGE_MIN;
-  // 판정 불가 상태로 떨어지면 켜져 있던 필터를 끈다(0건 오인 방지).
-  useEffect(() => {
-    if (!openJudgeable && filters.openTodayOnly) setFilters((f) => ({ ...f, openTodayOnly: false }));
-  }, [openJudgeable, filters.openTodayOnly]);
+  // '오늘 여는 곳' 칩 카운트: 확정 개관 + 추정 개관(unknown). closed 만 뺀 수.
+  const openTodayCount = counts ? counts.openToday.open + counts.openToday.unknown : null;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -368,23 +357,12 @@ export function MuseumsBrowser() {
       {/* 필터 */}
       <div className="space-y-1.5 border-b border-border px-4 py-2">
         <ChipRow label="상태">
-          {/* 킬러 필터 — 오늘 여는 곳. 눈에 띄는 톤. 운영정보 수집 중이면 비활성화. */}
-          {openJudgeable ? (
-            <Chip active={filters.openTodayOnly} tone="green" onClick={onToggleOpenToday}>
-              <Clock className="size-3" />
-              오늘 여는 곳
-              {counts && <Count>{counts.openToday.open}</Count>}
-            </Chip>
-          ) : (
-            <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground/60"
-              title="운영정보(휴관일)를 아직 불러오지 못해 오늘 개관 여부를 판정할 수 없습니다"
-            >
-              <Clock className="size-3" />
-              오늘 여는 곳
-              <span className="text-[10px]">· 판정 불가</span>
-            </span>
-          )}
+          {/* 킬러 필터 — 오늘 여는 곳(추정 개관 포함, 휴관 확실한 곳만 제외). 눈에 띄는 톤. */}
+          <Chip active={filters.openTodayOnly} tone="green" onClick={onToggleOpenToday}>
+            <Clock className="size-3" />
+            오늘 여는 곳
+            {openTodayCount !== null && <Count>{openTodayCount}</Count>}
+          </Chip>
           <span className="mx-0.5 w-px shrink-0 self-stretch bg-border" aria-hidden />
           {/* 축 2 — 지금 하는 전시(오버레이 토글, 보라). */}
           <Chip active={showEx} tone="purple" onClick={() => setShowEx((v) => !v)}>
@@ -477,12 +455,11 @@ export function MuseumsBrowser() {
               flyTo={flyTo}
             />
           )}
-          {/* 범례: 핀 색의 의미(오늘 개관/휴관/확인 필요) */}
+          {/* 범례: 핀 색의 의미(오늘 개관(추정 포함)/휴관) */}
           {hasEverLoaded && (
             <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-col gap-1 rounded-lg border border-border bg-card/90 px-2.5 py-2 text-[11px] shadow-sm backdrop-blur">
-              <LegendDot color={OPEN_STATE_COLOR.open} label="오늘 개관" />
+              <LegendDot color={OPEN_STATE_COLOR.open} label="오늘 개관(추정 포함)" />
               <LegendDot color={OPEN_STATE_COLOR.closed} label="오늘 휴관" />
-              <LegendDot color={OPEN_STATE_COLOR.unknown} label="확인 필요" />
               {showEx && <LegendDot color="#a855f7" label="지금 하는 전시" />}
             </div>
           )}
@@ -527,11 +504,10 @@ export function MuseumsBrowser() {
             )}
           </div>
 
-          {/* 오늘 여는 곳 필터 켰을 때 제외 고지(조용히 숨기지 않는다) */}
-          {filters.openTodayOnly && excluded && (excluded.closed > 0 || excluded.unknown > 0) && (
-            <p className="px-4 pb-1 text-[11px] text-amber-300/90">
-              오늘 휴관 {excluded.closed}곳
-              {excluded.unknown > 0 && `, 판정 불가 ${excluded.unknown}곳`}은 제외했습니다.
+          {/* 오늘 여는 곳 필터 켰을 때 제외 고지 */}
+          {filters.openTodayOnly && excluded && excluded.closed > 0 && (
+            <p className="px-4 pb-1 text-[11px] text-muted-foreground">
+              오늘 휴관이 확실한 {excluded.closed}곳은 제외했습니다.
             </p>
           )}
 
@@ -623,17 +599,10 @@ export function MuseumsBrowser() {
               ))}
           </div>
 
-          {/* 상세 병합률(부분 결측) 정직 고지. 목록·지도는 정상이고 운영정보만 결측임을 명확히. */}
-          {meta && !openJudgeable && (
-            <p className="border-t border-amber-500/20 bg-amber-500/5 px-4 py-1.5 text-[11px] text-amber-300/90">
-              운영정보(휴관일)를 불러오지 못해 <b>&lsquo;오늘 여는 곳&rsquo;을 판정할 수 없습니다</b>. 목록·위치는
-              정상입니다(수집률 {Math.round(meta.introCoverage * 100)}%). 잠시 후 자동으로 채워집니다.
-            </p>
-          )}
-          {meta && openJudgeable && meta.introCoverage < 0.95 && (
+          {/* 휴관 정보 부분 반영 안내 — 수집률과 무관하게 눈에 안 띄는 한 줄(muted). */}
+          {meta && (
             <p className="border-t border-border px-4 py-1.5 text-[11px] text-muted-foreground">
-              휴관·관람 정보를 아직 다 불러오지 못했습니다(수집률 {Math.round(meta.introCoverage * 100)}%).
-              해당 항목은 &lsquo;확인 필요&rsquo;로 표시되며 잠시 후 채워집니다.
+              {OPEN_INFO_NOTICE}
             </p>
           )}
         </div>

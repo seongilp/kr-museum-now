@@ -4,16 +4,16 @@ import { Clock, CircleDollarSign, Info, Landmark, MapPin, ParkingCircle, Phone, 
 
 import type { MuseumWithDistance } from '@/lib/types';
 import { KIND_LABEL } from '@/lib/museums';
-import { openStateBadgeClass, openStateLabel } from '@/lib/museum-ui';
+import { OPEN_INFO_NOTICE, openStateBadgeClass, openStateLabel } from '@/lib/museum-ui';
 import { cn } from '@/lib/utils';
 
 /**
  * 박물관 상세 시트. 카탈로그에 담긴 필드를 그대로 보여 준다(추가 상류 호출 없음).
  *
  * ★ 정직성 규칙:
- *  - **휴관일 원문(restRaw)을 항상 함께 보여준다.** 판정('오늘 개관/휴관/확인 필요')이 틀려도
+ *  - **휴관일 원문(restRaw)을 항상 함께 보여준다.** 판정('오늘 개관/휴관/추정 개관')이 틀려도
  *    사용자가 직접 읽고 판단할 수 있어야 한다.
- *  - 판정 불가(unknown)는 회색으로 명확히 구분한다(초록/개관처럼 보이지 않게).
+ *  - 판정 불가(unknown)는 '오늘 개관 · 방문 전 확인'(추정)으로 초록 표시하되 안내 한 줄을 덧붙인다.
  *  - 공휴일 판정은 하지 않는다(캘린더 없음). 그 한계를 고지문으로 드러낸다.
  *  - 값 없는 필드는 그 줄 자체를 그리지 않는다(빈 항목을 만들지 않음).
  */
@@ -84,13 +84,14 @@ export function MuseumDetail({
           )}
           {museum.openToday === 'unknown' && (
             <p className="mt-1 text-[11px] opacity-75">
-              휴관 규칙을 자동으로 해석하지 못했습니다. 원문을 직접 확인하세요.
+              휴관 규칙을 확인하지 못해 개관으로 추정했습니다. 실제 개관 여부는 방문 전 확인하세요.
             </p>
           )}
           <p className="mt-1 text-[11px] opacity-70">
             ※ 공휴일 휴관은 자동 반영되지 않습니다(공휴일 판정 미지원).
           </p>
         </div>
+        <p className="text-[11px] text-muted-foreground">{OPEN_INFO_NOTICE}</p>
 
         {/* 관람시간 */}
         {museum.hours && (
