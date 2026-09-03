@@ -42,9 +42,9 @@
   - **★ 상세는 정적 스냅샷이 기본이다(`data/intros.json`).** 1,680곳 상세는 (a) 쿼터 1,000/일,
     (b) throttle 로 55s당 ~680건 한계라 런타임으로는 하루에 다 못 받고, 인스턴스 메모리는 인스턴스가
     바뀌면 0% 로 돌아간다. 그래서 `npm run collect:intros`(`scripts/collect-intros.ts`, 재개 가능·code 22
-    에서 저장 후 중단·실행당 ≤800)가 **오프라인에서 전량을 모아 리포에 커밋**하고, GitHub Actions
-    (`.github/workflows/collect-intros.yml`, 매주 월·화 KST 03:00, `--force` 로 가장 오래된 것부터 갱신)이
-    이를 자동 갱신한다. 런타임 회전(rotation)은 **정적본에 없는 신규 id 만** 일일 ≤150건 채우고, 그 결과가
+    에서 저장 후 중단·실행당 ≤800)가 **오프라인에서 전량을 모아 리포에 커밋**하고, ebs 서버 크론
+    (`scripts/cron-collect-intros.sh`, 매일 KST 03:00 — 월·화는 `--force` 로 가장 오래된 것부터 전량, 수~일은
+    빠진 id 만)이 main 에 푸시하면 Vercel git 연동이 자동 배포한다. 런타임 회전(rotation)은 **정적본에 없는 신규 id 만** 일일 ≤150건 채우고, 그 결과가
     정적본 위에 덮어써진다(`lib/intro-static.ts`, 순수 함수·테스트). `introCoverage` 는 둘의 합산.
   - **완전 빌드**(전량 커버)만 `/api/catalog` self-fetch(`next:{revalidate}`)로 자정까지 공유 Data
     Cache(200). **부분 빌드(회전 중)** 는 목록을 그대로 내보내되 짧게(12분)만 캐시하고 공유 캐시엔 안
