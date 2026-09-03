@@ -28,7 +28,25 @@ export const LCLS_KIND: Record<string, MuseumKind> = {
   VE070500: 'science', // 과학관/천문대
 };
 
-export type MuseumKind = 'museum' | 'gallery' | 'exhibition' | 'memorial' | 'science';
+/**
+ * 종류 6가지. `other`(기타)는 **포함 대상인데 5종 어디에도 안 맞을 때의 명시적 fallback**이다 —
+ * 현재 데이터(≈1,680)는 5종이 전부 덮어 0건이지만, 분류 코드가 추가·변경돼도 조용히 떨어지지 않고
+ * '기타'로 보이게 한다(칩은 0건이면 숨김).
+ */
+export type MuseumKind = 'museum' | 'gallery' | 'exhibition' | 'memorial' | 'science' | 'other';
+
+export const MUSEUM_KINDS: readonly MuseumKind[] = [
+  'museum',
+  'gallery',
+  'exhibition',
+  'memorial',
+  'science',
+  'other',
+];
+
+export function isMuseumKind(v: unknown): v is MuseumKind {
+  return typeof v === 'string' && (MUSEUM_KINDS as readonly string[]).includes(v);
+}
 
 /** 종류 한글 라벨(UI 공통). */
 export const KIND_LABEL: Record<MuseumKind, string> = {
@@ -37,6 +55,7 @@ export const KIND_LABEL: Record<MuseumKind, string> = {
   exhibition: '전시관',
   memorial: '기념관',
   science: '과학관',
+  other: '기타',
 };
 
 /** 판별 근거(추적용). cat3=구분류로도 잡힘 / lcls=cat3 빈값, 신형 분류로만 잡힘. */
@@ -136,9 +155,17 @@ export function sidoOf(areacode: string | undefined, addr1?: string): string | n
   return (areacode && AREACODE_SIDO[areacode.trim()]) || sidoFromAddr(addr1);
 }
 
-/** lclsSystm3 로 박물관류 종류를 판별. 박물관류가 아니면 null. */
+/**
+ * 포함 대상(박물관류) lclsSystm3 코드 집합. **포함 여부**와 **종류 판정**을 분리한다 — 포함되는데
+ * LCLS_KIND 에 종류가 없으면 'other'(기타)로 떨어진다(명시적 fallback). 지금은 두 집합이 같아 0건.
+ */
+export const MUSEUM_LCLS_CODES: ReadonlySet<string> = new Set(Object.keys(LCLS_KIND));
+
+/** lclsSystm3 로 박물관류 종류를 판별. 박물관류가 아니면 null, 포함인데 종류 미정이면 'other'. */
 export function kindOf(lclsSystm3: string | undefined): MuseumKind | null {
-  return (lclsSystm3 && LCLS_KIND[lclsSystm3.trim()]) || null;
+  const code = lclsSystm3?.trim();
+  if (!code || !MUSEUM_LCLS_CODES.has(code)) return null;
+  return LCLS_KIND[code] ?? 'other';
 }
 
 // 한국 대략 경계(WGS84). 좌표 스왑·쓰레기를 거른다.

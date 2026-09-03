@@ -25,11 +25,11 @@ import {
   toggleKind,
   type Filters,
 } from '@/lib/facets';
-import { OPEN_INFO_NOTICE, OPEN_STATE_COLOR } from '@/lib/museum-ui';
+import { CLOSED_RING_COLOR, KIND_COLOR, OPEN_INFO_NOTICE, kindColorFor } from '@/lib/museum-ui';
 import { cn } from '@/lib/utils';
 import { MuseumCard } from '@/components/museum-card';
 import { MuseumDetail } from '@/components/museum-detail';
-import { MuseumsMap, type FlyTarget, type MapPoint } from '@/components/museums-map';
+import { EX_COLOR, EX_RING_COLOR, MuseumsMap, type FlyTarget, type MapPoint } from '@/components/museums-map';
 import { CommandPalette } from '@/components/command-palette';
 
 
@@ -242,7 +242,15 @@ export function MuseumsBrowser() {
   );
 
   const points: MapPoint[] = useMemo(
-    () => merged.map((m) => ({ id: m.id, lon: m.lon, lat: m.lat, title: m.title, state: m.openToday })),
+    () =>
+      merged.map((m) => ({
+        id: m.id,
+        lon: m.lon,
+        lat: m.lat,
+        title: m.title,
+        kind: m.kind,
+        state: m.openToday,
+      })),
     [merged],
   );
 
@@ -364,7 +372,7 @@ export function MuseumsBrowser() {
             {openTodayCount !== null && <Count>{openTodayCount}</Count>}
           </Chip>
           <span className="mx-0.5 w-px shrink-0 self-stretch bg-border" aria-hidden />
-          {/* 축 2 — 지금 하는 전시(오버레이 토글, 보라). */}
+          {/* 축 2 — 지금 하는 전시(오버레이 토글, 보라 톤; 지도 핀은 흰 채움+보라 링). */}
           <Chip active={showEx} tone="purple" onClick={() => setShowEx((v) => !v)}>
             <ImageIcon className="size-3" />
             지금 하는 전시
@@ -387,9 +395,15 @@ export function MuseumsBrowser() {
             )}
           </ChipRow>
         )}
+        {/* 종류 칩 = 지도 핀 색 범례 겸용(dot). 기타(other)는 fallback 이라 0건이면 숨긴다. */}
         <ChipRow label="종류">
-          {KIND_OPTIONS.map((o) => (
-            <Chip key={o.key} active={filters.kinds.includes(o.key)} onClick={() => onToggleKind(o.key)}>
+          {KIND_OPTIONS.filter((o) => o.key !== 'other' || kindCount(o.key) > 0).map((o) => (
+            <Chip
+              key={o.key}
+              active={filters.kinds.includes(o.key)}
+              dotColor={kindColorFor(o.key)}
+              onClick={() => onToggleKind(o.key)}
+            >
               {o.label}
               {counts && <Count>{kindCount(o.key)}</Count>}
             </Chip>
@@ -455,12 +469,11 @@ export function MuseumsBrowser() {
               flyTo={flyTo}
             />
           )}
-          {/* 범례: 핀 색의 의미(오늘 개관(추정 포함)/휴관) */}
+          {/* 범례: 종류색은 상단 칩 dot 이 맡는다. 여기엔 휴관 표기(흐림+빨간 링)와 전시 오버레이만. */}
           {hasEverLoaded && (
             <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-col gap-1 rounded-lg border border-border bg-card/90 px-2.5 py-2 text-[11px] shadow-sm backdrop-blur">
-              <LegendDot color={OPEN_STATE_COLOR.open} label="오늘 개관(추정 포함)" />
-              <LegendDot color={OPEN_STATE_COLOR.closed} label="오늘 휴관" />
-              {showEx && <LegendDot color="#a855f7" label="지금 하는 전시" />}
+              <LegendDot color={KIND_COLOR.other} ring={CLOSED_RING_COLOR} dim label="오늘 휴관 (흐림 + 빨간 링)" />
+              {showEx && <LegendDot color={EX_COLOR} ring={EX_RING_COLOR} label="지금 하는 전시" />}
             </div>
           )}
           {!hasEverLoaded && data.kind !== 'error' && (
@@ -652,11 +665,14 @@ function ChipRow({ label, children }: { label: string; children: React.ReactNode
 function Chip({
   active,
   tone = 'primary',
+  dotColor,
   onClick,
   children,
 }: {
   active: boolean;
   tone?: 'primary' | 'green' | 'purple';
+  /** 있으면 칩 앞에 색 dot(종류 칩 = 핀 색 범례 겸용). */
+  dotColor?: string;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -676,6 +692,13 @@ function Chip({
         active ? activeCls : 'border-border text-muted-foreground hover:text-foreground',
       )}
     >
+      {dotColor && (
+        <span
+          aria-hidden
+          className="size-2 shrink-0 rounded-full ring-1 ring-black/30"
+          style={{ backgroundColor: dotColor }}
+        />
+      )}
       {children}
     </button>
   );
@@ -732,10 +755,27 @@ function Count({ children }: { children: React.ReactNode }) {
   return <span className="opacity-60">{children}</span>;
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
+function LegendDot({
+  color,
+  ring,
+  dim = false,
+  label,
+}: {
+  color: string;
+  ring?: string;
+  dim?: boolean;
+  label: string;
+}) {
   return (
     <span className="flex items-center gap-1.5 text-muted-foreground">
-      <span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
+      <span
+        className="size-2.5 rounded-full"
+        style={{
+          backgroundColor: color,
+          opacity: dim ? 0.4 : 1,
+          boxShadow: ring ? `0 0 0 1.5px ${ring}` : undefined,
+        }}
+      />
       {label}
     </span>
   );

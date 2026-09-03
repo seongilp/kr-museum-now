@@ -5,7 +5,7 @@ import { Building2, Clock, FlaskConical, Landmark, MapPin, Palette, Image as Ima
 import type { MuseumWithDistance } from '@/lib/types';
 import type { MuseumKind } from '@/lib/museums';
 import { KIND_LABEL } from '@/lib/museums';
-import { openStateBadgeClass, openStateLabel } from '@/lib/museum-ui';
+import { kindColorFor, openStateBadgeClass, openStateLabel } from '@/lib/museum-ui';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,6 +19,7 @@ const KIND_ICON: Record<MuseumKind, React.ReactNode> = {
   exhibition: <ImageIcon className="size-2.5" />,
   memorial: <Building2 className="size-2.5" />,
   science: <FlaskConical className="size-2.5" />,
+  other: <Landmark className="size-2.5" />,
 };
 
 export function MuseumCard({
@@ -91,7 +92,15 @@ export function MuseumCard({
             <Clock className="size-2.5" />
             {openStateLabel(museum.openToday)}
           </span>
-          <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          {/* 종류 배지 = 지도 핀 색(KIND_COLOR)과 동일한 색으로. */}
+          <span
+            className="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              color: kindColorFor(museum.kind),
+              borderColor: `${kindColorFor(museum.kind)}4d`,
+              backgroundColor: `${kindColorFor(museum.kind)}26`,
+            }}
+          >
             {KIND_ICON[museum.kind]}
             {KIND_LABEL[museum.kind]}
           </span>

@@ -4,7 +4,7 @@ import { Clock, CircleDollarSign, Info, Landmark, MapPin, ParkingCircle, Phone, 
 
 import type { MuseumWithDistance } from '@/lib/types';
 import { KIND_LABEL } from '@/lib/museums';
-import { OPEN_INFO_NOTICE, openStateBadgeClass, openStateLabel } from '@/lib/museum-ui';
+import { OPEN_INFO_NOTICE, kindColorFor, openStateBadgeClass, openStateLabel } from '@/lib/museum-ui';
 import { cn } from '@/lib/utils';
 
 /**
@@ -31,9 +31,14 @@ export function MuseumDetail({
       {/* 헤더 */}
       <div className="sticky top-0 z-10 flex items-start justify-between gap-2 border-b border-border bg-card/95 px-4 py-3 backdrop-blur">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <Landmark className="size-3.5 shrink-0 text-primary" />
-            <span className="text-[11px] font-medium text-primary">{KIND_LABEL[museum.kind]}</span>
+          <div className="flex items-center gap-1.5" style={{ color: kindColorFor(museum.kind) }}>
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full"
+              style={{ backgroundColor: kindColorFor(museum.kind) }}
+            />
+            <Landmark className="size-3.5 shrink-0" />
+            <span className="text-[11px] font-medium">{KIND_LABEL[museum.kind]}</span>
           </div>
           <h2 className="mt-0.5 truncate text-base font-bold">{museum.title}</h2>
           {museum.addr && (

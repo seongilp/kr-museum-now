@@ -1,3 +1,5 @@
+import type { MuseumKind } from './museums';
+import { isMuseumKind } from './museums';
 import type { OpenState } from './restday';
 
 /**
@@ -28,15 +30,43 @@ export function passesOpenTodayFilter(state: OpenState): boolean {
   return state !== 'closed';
 }
 
-const GREEN = '#22c55e';
 const RED = '#ef4444';
 
-/** 지도 핀 색. open 과 unknown(추정 개관) 모두 초록, closed 만 빨강. */
-export const OPEN_STATE_COLOR: Record<OpenState, string> = {
-  open: GREEN,
-  closed: RED,
-  unknown: GREEN,
+/**
+ * ★ 종류별 핀·배지·칩 dot 색(단일 출처). **어두운 베이스맵 위에서 여섯이 구별되도록** 색상뿐 아니라
+ * 명도까지 벌린다. 제약:
+ *  - 내 위치 점(파랑 #3b82f6)과 겹치지 않게 파랑 계열 회피.
+ *  - 색맹 안전: 빨강-초록 단독 대비를 피하고 명도 차를 함께 준다. 빨강은 '오늘 휴관' 링 전용.
+ *  - '지금 하는 전시' 오버레이 핀(museums-map: 흰 채움+보라 링)과 채움색이 겹치지 않는다.
+ *  - 기타(other)는 특징이 없으니 중립 슬레이트.
+ */
+export const KIND_COLOR: Record<MuseumKind, string> = {
+  museum: '#f59e0b', // 앰버 — 가장 많고 대표적
+  gallery: '#f472b6', // 로즈
+  exhibition: '#a855f7', // 바이올렛
+  memorial: '#2dd4bf', // 틸
+  science: '#a3e635', // 라임 — 희소(59)라 밝게 눈에 띄게
+  other: '#94a3b8', // 슬레이트(중립, fallback)
 };
+
+/** 종류 색. 알 수 없는 값(외부 데이터·구버전 캐시)은 기타색으로 — 절대 throw 하지 않는다. */
+export function kindColorFor(kind: MuseumKind | string | null | undefined): string {
+  return isMuseumKind(kind) ? KIND_COLOR[kind] : KIND_COLOR.other;
+}
+
+/**
+ * '오늘 휴관(확정)' 핀 표현 — 색이 아니라 **흐림 + 빨간 링**으로. 종류색은 유지한 채 구분한다
+ * (빨강을 채움색으로 쓰면 종류색과 충돌하고, 색맹 사용자에겐 초록·빨강 대비가 안 읽힌다).
+ * open·unknown(추정 개관)은 종류색 그대로.
+ */
+export const CLOSED_RING_COLOR = RED;
+export const CLOSED_PIN_OPACITY = 0.4;
+export const OPEN_PIN_OPACITY = 0.92;
+
+/** 상태별 핀 채움 투명도. closed 만 흐리게. */
+export function pinOpacityFor(state: OpenState): number {
+  return state === 'closed' ? CLOSED_PIN_OPACITY : OPEN_PIN_OPACITY;
+}
 
 export function openStateBadgeClass(state: OpenState): string {
   switch (toDisplayState(state)) {

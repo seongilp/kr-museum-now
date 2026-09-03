@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   itemsOf,
+  isMuseumKind,
   kindOf,
   normalizeMuseum,
   parseApiError,
@@ -24,6 +25,17 @@ describe('kindOf / sidoOf — lclsSystm3·areacode 매핑', () => {
     assert.equal(kindOf('VE120100'), null); // 책방·서점 제외
     assert.equal(kindOf(''), null);
     assert.equal(kindOf(undefined), null);
+    assert.equal(kindOf(' VE070100 '), 'museum'); // trim
+  });
+
+  it("isMuseumKind: 6종만 true, 'other' 포함", () => {
+    for (const k of ['museum', 'gallery', 'exhibition', 'memorial', 'science', 'other']) {
+      assert.equal(isMuseumKind(k), true, k);
+    }
+    assert.equal(isMuseumKind('theater'), false);
+    assert.equal(isMuseumKind(null), false);
+    assert.equal(isMuseumKind(undefined), false);
+
   });
   it('areacode → 시도 key', () => {
     assert.equal(sidoOf('1'), 'seoul');

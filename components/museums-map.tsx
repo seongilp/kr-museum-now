@@ -5,8 +5,15 @@ import { useEffect, useRef } from 'react';
 
 import type { LatLon } from '@/lib/geo';
 import type { MapBounds } from '@/lib/types';
+import type { MuseumKind } from '@/lib/museums';
+import { MUSEUM_KINDS } from '@/lib/museums';
 import type { OpenState } from '@/lib/restday';
-import { OPEN_STATE_COLOR } from '@/lib/museum-ui';
+import {
+  CLOSED_PIN_OPACITY,
+  CLOSED_RING_COLOR,
+  KIND_COLOR,
+  OPEN_PIN_OPACITY,
+} from '@/lib/museum-ui';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -14,9 +21,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
  * 박물관 지도. MapLibre **v5** — v6 는 Turbopack 에서 워커 로딩이 실패해 지도가 조용히 안 뜬다
  * (메모리 기록). 좌표는 WGS84(lon,lat)를 API 가 직접 준다.
  *
- * ★ 핀 색 = 오늘 개관 상태(open·unknown(추정 개관) 초록 / closed 빨강). 이 앱의 핵심 값이 "오늘
- *   여는가"라 지도에서 바로 읽히는 게 맞다. 대신 범례를 함께 그려 색의 의미를 명시한다(범례 없는
- *   다색 지도가 오히려 헷갈린다는 함정을 범례로 방어).
+ * ★ 핀 색 = **종류**(박물관·미술관·전시관·기념관·과학관·기타, KIND_COLOR 단일 출처). 상단 종류 칩의
+ *   dot 이 범례를 겸한다. **오늘 휴관(확정)** 은 색을 바꾸지 않고 **흐림(투명도) + 빨간 링**으로
+ *   구분한다 — 종류색을 유지하면서도 "지금 못 가는 곳"이 한눈에 죽어 보이게. open·unknown(추정 개관)은
+ *   종류색 그대로.
  */
 
 export interface MapPoint {
@@ -24,10 +32,11 @@ export interface MapPoint {
   lon: number;
   lat: number;
   title: string;
+  kind: MuseumKind;
   state: OpenState;
 }
 
-/** 전시 오버레이 포인트(좌표 보유분만). 박물관과 구분되는 보라 핀. */
+/** 전시 오버레이 포인트(좌표 보유분만). 흰 채움 + 보라 링 핀(전시 UI 톤=보라 유지, 채움은 전시관 종류색과 분리). */
 export interface ExhibitionPoint {
   id: string;
   lon: number;
@@ -49,7 +58,7 @@ function toGeoJson(points: MapPoint[]): GeoJSON.FeatureCollection {
     features: points.map((p) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-      properties: { id: p.id, title: p.title, state: p.state },
+      properties: { id: p.id, title: p.title, kind: p.kind, state: p.state },
     })),
   };
 }
@@ -57,7 +66,12 @@ function toGeoJson(points: MapPoint[]): GeoJSON.FeatureCollection {
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 const EX_SOURCE = 'exhibitions';
-const EX_COLOR = '#a855f7'; // 전시 = 보라(박물관 개관상태 색과 구분)
+/**
+ * 전시 오버레이 핀 — **흰 채움 + 보라 링**. 보라 단색은 전시관(exhibition) 종류색과 겹치므로 채움을
+ * 흰색으로 빼고, 전시 UI 톤(보라 칩·목록)과의 연결은 링으로 남긴다. 범례도 같은 값을 쓴다.
+ */
+export const EX_COLOR = '#f8fafc';
+export const EX_RING_COLOR = '#a855f7';
 
 function exToGeoJson(points: ExhibitionPoint[]): GeoJSON.FeatureCollection {
   return {
@@ -70,16 +84,32 @@ function exToGeoJson(points: ExhibitionPoint[]): GeoJSON.FeatureCollection {
   };
 }
 
-/** 상태별 색을 지도 표현식으로. */
-const STATE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
+/** 종류 → 색 지도 표현식(match). 모르는 값은 기타색. */
+const KIND_COLOR_EXPR = [
   'match',
-  ['get', 'state'],
-  'open',
-  OPEN_STATE_COLOR.open,
-  'closed',
-  OPEN_STATE_COLOR.closed,
-  OPEN_STATE_COLOR.unknown,
+  ['get', 'kind'],
+  ...MUSEUM_KINDS.flatMap((k) => [k, KIND_COLOR[k]]),
+  KIND_COLOR.other,
+] as unknown as maplibregl.ExpressionSpecification;
+
+const IS_CLOSED: maplibregl.ExpressionSpecification = ['==', ['get', 'state'], 'closed'];
+
+/** 휴관(확정)만 흐리게. */
+const PIN_OPACITY_EXPR: maplibregl.ExpressionSpecification = [
+  'case',
+  IS_CLOSED,
+  CLOSED_PIN_OPACITY,
+  OPEN_PIN_OPACITY,
 ];
+
+/** 휴관(확정)만 빨간 링, 나머지는 다크 베이스맵과 분리되는 어두운 테두리. */
+const PIN_STROKE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
+  'case',
+  IS_CLOSED,
+  CLOSED_RING_COLOR,
+  '#0b0f19',
+];
+const PIN_STROKE_WIDTH_EXPR: maplibregl.ExpressionSpecification = ['case', IS_CLOSED, 2, 1.5];
 
 /** 지도 이동 목적지(프로그램 이동). key 가 바뀔 때만 실제로 이동한다(사용자 조작과 안 싸우게). */
 export interface FlyTarget {
@@ -177,10 +207,11 @@ export function MuseumsMap({
         source: SOURCE,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 5, 15, 9],
-          'circle-color': STATE_COLOR_EXPR,
-          'circle-opacity': 0.92,
-          'circle-stroke-color': '#0b0f19',
-          'circle-stroke-width': 1.5,
+          'circle-color': KIND_COLOR_EXPR,
+          'circle-opacity': PIN_OPACITY_EXPR,
+          'circle-stroke-color': PIN_STROKE_COLOR_EXPR,
+          'circle-stroke-width': PIN_STROKE_WIDTH_EXPR,
+          'circle-stroke-opacity': 1,
         },
       });
       map.addLayer({
@@ -203,7 +234,7 @@ export function MuseumsMap({
         },
       });
 
-      // 전시 오버레이 소스·레이어(박물관 위에). 보라 핀 + 라벨 + 선택 강조.
+      // 전시 오버레이 소스·레이어(박물관 위에). 흰 채움·보라 링 핀 + 라벨 + 선택 강조.
       map.addSource(EX_SOURCE, { type: 'geojson', data: exToGeoJson(exPointsRef.current) });
       map.addLayer({
         id: 'ex-selected',
@@ -219,9 +250,9 @@ export function MuseumsMap({
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 5, 15, 9],
           'circle-color': EX_COLOR,
-          'circle-opacity': 0.92,
-          'circle-stroke-color': '#0b0f19',
-          'circle-stroke-width': 1.5,
+          'circle-opacity': 0.95,
+          'circle-stroke-color': EX_RING_COLOR,
+          'circle-stroke-width': 2,
         },
       });
       map.addLayer({

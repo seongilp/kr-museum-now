@@ -2,7 +2,7 @@
  * 필터 — 이 앱의 discovery UX. **순수 함수**(테스트가 붙는다).
  *
  * 세 축:
- *  1) 종류(kind): 박물관·미술관·전시관·기념관. 다중 선택(여러 개 켜면 합집합). cat3 로 확정된 값이라
+ *  1) 종류(kind): 박물관·미술관·전시관·기념관·과학관·기타. 다중 선택(여러 개 켜면 합집합). cat3 로 확정된 값이라
  *     채움률 100% — 필터로 안전하다.
  *  2) 지역(sido): 시도 단일 선택. areacode 로 확정.
  *  3) **오늘 여는 곳(openTodayOnly)**: 이 앱의 킬러. 휴관일 원문 → restday.ts 판정이 'open' 인 곳만.
@@ -26,6 +26,7 @@ export const KIND_OPTIONS: KindOption[] = [
   { key: 'exhibition', label: KIND_LABEL.exhibition },
   { key: 'memorial', label: KIND_LABEL.memorial },
   { key: 'science', label: KIND_LABEL.science },
+  { key: 'other', label: KIND_LABEL.other }, // 기타(fallback). 건수 0이면 칩은 숨긴다.
 ];
 
 /**

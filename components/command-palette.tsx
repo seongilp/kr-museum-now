@@ -15,6 +15,7 @@ import {
 
 import { KIND_OPTIONS, SIDO_OPTIONS, type Filters } from '@/lib/facets';
 import { KIND_LABEL, type MuseumKind } from '@/lib/museums';
+import { kindColorFor } from '@/lib/museum-ui';
 import type { MuseumIndexItem } from '@/lib/types';
 
 /**
@@ -35,6 +36,7 @@ const KIND_ICON: Record<MuseumKind, React.ReactNode> = {
   exhibition: <ImageIcon className="size-4" />,
   memorial: <Building2 className="size-4" />,
   science: <FlaskConical className="size-4" />,
+  other: <Landmark className="size-4" />,
 };
 
 export function CommandPalette({
@@ -176,7 +178,12 @@ export function CommandPalette({
                   >
                     <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
                       <span className="truncate">{m.title}</span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                      <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                        <span
+                          aria-hidden
+                          className="size-1.5 rounded-full"
+                          style={{ backgroundColor: kindColorFor(m.kind) }}
+                        />
                         {KIND_LABEL[m.kind]}
                       </span>
                     </span>
